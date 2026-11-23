@@ -23,14 +23,21 @@ if(WITH_RADOSGW_AMQP_ENDPOINT)
 endif()
 
 if(WITH_RADOSGW_KAFKA_ENDPOINT)
-  # kafka stub library — built whenever RGW links against a dynamic
-  # system librdkafka (WITH_SYSTEM_RDKAFKA=ON, or the fallback path
-  # when the bundled submodule is not checked out).
-  if(WITH_SYSTEM_RDKAFKA OR NOT EXISTS "${CMAKE_SOURCE_DIR}/src/librdkafka/CMakeLists.txt")
-    set(kafka_stub_src
-      kafka_stub.cc)
-    add_library(kafka_stub STATIC ${kafka_stub_src})
-  endif()
+  # kafka mock library - provides link-time replacements for the
+  # librdkafka C API used by rgw_kafka.cc with controllable knobs (see
+  # kafka_mock.h) so that unit tests can drive topic-creation failures,
+  # produce failures and ack/nack paths without a live broker. It is
+  # also used to satisfy the rd_kafka_* symbol references pulled in from
+  # rgw_common whenever tests do not otherwise link against librdkafka.
+  set(kafka_mock_src
+    kafka_mock.cc)
+  add_library(kafka_mock STATIC ${kafka_mock_src})
+  # kafka_mock.cc / kafka_mock.h include <librdkafka/rdkafka.h>.
+  # PRIVATE-link RDKafka so its INTERFACE_INCLUDE_DIRECTORIES are used to
+  # compile the mock (without pulling the real library into the mock itself,
+  # which would defeat the mock). The actual rd_kafka_* symbol definitions
+  # live in kafka_mock.cc.
+  target_link_libraries(kafka_mock PRIVATE RDKafka::RDKafka)
 endif()
 
 if(WITH_JAEGER)
@@ -356,6 +363,19 @@ if(WITH_RADOSGW_AMQP_ENDPOINT)
   target_include_directories(unittest_rgw_amqp
     SYSTEM PRIVATE "${CMAKE_SOURCE_DIR}/src/rgw")
   target_link_libraries(unittest_rgw_amqp ${rgw_libs})
+endif()
+
+if(WITH_RADOSGW_KAFKA_ENDPOINT)
+  add_executable(unittest_rgw_kafka test_rgw_kafka.cc)
+  add_ceph_unittest(unittest_rgw_kafka)
+  target_include_directories(unittest_rgw_kafka
+    SYSTEM PRIVATE "${CMAKE_SOURCE_DIR}/src/rgw")
+  target_link_libraries(unittest_rgw_kafka ${rgw_libs})
+  # test_rgw_kafka.cc pulls in kafka_mock.h which includes
+  # <librdkafka/rdkafka.h>; pull RDKafka's INTERFACE include dirs into the
+  # test compilation. RDKafka::RDKafka's own object symbols are NOT pulled
+  # in: kafka_mock (linked earlier via rgw_libs) provides them first.
+  target_link_libraries(unittest_rgw_kafka PRIVATE RDKafka::RDKafka)
 endif()
 
 # unittest_rgw_xml

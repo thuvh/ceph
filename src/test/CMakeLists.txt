@@ -86,13 +86,12 @@ if(WITH_RADOSGW)
     list(APPEND rgw_libs amqp_mock)
   endif()
   if(WITH_RADOSGW_KAFKA_ENDPOINT)
-    # kafka_stub provides fake rd_kafka_* symbols for tests; needed
-    # whenever we link against a dynamic system librdkafka (either
-    # opted-in via WITH_SYSTEM_RDKAFKA, or as a fallback when the
-    # bundled submodule is not checked out).
-    if(WITH_SYSTEM_RDKAFKA OR NOT EXISTS "${CMAKE_SOURCE_DIR}/src/librdkafka/CMakeLists.txt")
-      list(APPEND rgw_libs kafka_stub)
-    endif()
+    # kafka_mock provides link-time replacements for the rd_kafka_* symbols
+    # referenced from rgw_kafka.cc (which lives in rgw_common, where librdkafka
+    # is a PRIVATE link dependency and so is not propagated to its consumers).
+    # It is now a controllable mock used by unittest_rgw_kafka to exercise
+    # topic-creation / produce failure paths (see tracker #68033 / #69566).
+    list(APPEND rgw_libs kafka_mock)
   endif()
   add_subdirectory(rgw)
 endif(WITH_RADOSGW)
